@@ -64,6 +64,37 @@
 
     }
 
+    //delete
+    // function updateTaskQueueDate($id)
+    // {
+    //     include 'settings.php'; //I suck at scope, why isn't this working without embedding this in each function?
+    //     $key = 'Snooze Date';   //we're going to update the last time the prototype task was queued
+    //     $value = date("Y-m-d"); //update prototype task to current datw
+    //     $url = $airtable_url_queue . '/' . $id;   //url to send data to
+    //     $type = 'PATCH';//patch = update
+    //     $headers = array('Authorization: Bearer ' . $api_key, 'Content-type: application/json');//headers  api key auth
+    //     $data = array("fields" => array( $key => $value ) ); //data to update
+    //     $json = json_encode($data); //encdoe data to send via CURL
+    //     update_airtable($url, $type, $json, $headers);
+    //     usleep(201000); //we can only do 5 entries per second, 201000 micro seconds = 201 milliseconds, a little under 5 per second. TODO: use a rolling timer to mimiize wait time on this  i.e. keep track of the last time something was sent and wait AT MOST 200ms, since some time has already passed
+
+    // }
+
+    function unsnoozeTask($id)
+    {
+        include 'settings.php'; //I suck at scope, why isn't this working without embedding this in each function?
+        $key = 'Snooze Date';   //we're going to update the last time the prototype task was queued
+        $value; //value is empty, we're removing the date
+        $url = $airtable_url_queue . '/' . $id;   //url to send data to
+        $type = 'PATCH';//patch = update
+        $headers = array('Authorization: Bearer ' . $api_key, 'Content-type: application/json');//headers  api key auth
+        $data = array("fields" => array( $key => $value ) ); //data to update
+        $json = json_encode($data); //encdoe data to send via CURL
+        update_airtable($url, $type, $json, $headers);
+        usleep(201000); //we can only do 5 entries per second, 201000 micro seconds = 201 milliseconds, a little under 5 per second. TODO: use a rolling timer to mimiize wait time on this  i.e. keep track of the last time something was sent and wait AT MOST 200ms, since some time has already passed
+
+    }
+
 
 
 
@@ -104,24 +135,6 @@
         <br/> Daily / hourly - move tasks to queue
 
 
-
-
-        <br />
-        Finished tasks need to get processed, but not moved?
-
-        <br />
-        <ul>
-            <li>5 Minutes - 
-            <li>Hourly -
-            <li>Daily  -
-            <li>Weekly - check enqued task (is this where we repopulate single serves?)
-            <li>Monthly - check enqued task
-            <li>Quarterly - check enqued task
-            <li>Yearly - check enqued task
-
-        </ul>
-
-
     </p>   
 
     <p>
@@ -148,6 +161,10 @@
 
 
     <?php
+
+
+    echo 'Start processing <br/>';
+
 
     //move this block to a getProtoTask function
         $view =rawurlencode('App View'); //we need to define the view for the table
@@ -193,7 +210,44 @@
     // print_r($airtable_response);
     // echo '</pre>';
 
-    //travese through protoype task queue
+    // echo '<pre>';
+    // print_r($airtable_response_task_queue);
+    // echo '</pre>';
+
+
+    //travese through task queue
+    foreach($airtable_response_task_queue['records'] as $key => $value) 
+    {
+        $idTask = $value['id'];  //entry id for the record
+        $nameTask = $value['fields']['Name'];        //name of task
+        $snoozedDate = $value['fields']['Snooze Date']; //if this is snoozed or not;
+
+
+            //date time objects that we'll use for difference
+            $lastSnoozeTime = new DateTime($snoozedDate); 
+            $currentTime = new DateTime(date('Y-m-d', time())); 
+
+            $interval = $lastSnoozeTime->diff($currentTime); //difference between protoype queue task + now
+
+
+            $dateAhead = $interval-> d;
+
+
+        echo $nameTask . ' ' .$snoozed . ' ' . $snoozedDate . ' ' . $dateAhead. '<br />';
+
+            if($dateAhead >= 1)
+            {
+                unsnoozeTask($idTask);
+            }
+
+
+
+
+
+    }
+
+
+    //travese through protoype task 
     foreach($airtable_response['records'] as $key => $value) 
     {
 
@@ -205,23 +259,27 @@
         $lastQueueTime = $value['fields']['Last Queued']; //yyyy-mm-dd time of last time we copied this entry to queue
         $currentTime = time();                          //current yyyy-mm-dd 
 
+
+
         //date time objects that we'll use for difference
-        $lastQueueTime = new DateTime($value['fields']['Last Queued']); 
+        $lastQueueDateTime = new DateTime($lastQueueTime); 
         $currenTime = new DateTime(date('Y-m-d', time())); 
 
-        $interval = $lastQueueTime->diff($currenTime); //difference between protoype queue task + now
-
+        $interval = $lastQueueDateTime->diff($currenTime); //difference between protoype queue task + now
+        // echo '<pre>';
+        // print_r($interval);
+        // echo '</pre>';
+        
         if ($protoTaskFreq == "Daily")
         {
 
-            //  echo '<pre>';
-            // print_r($interval);
-            // echo '</pre>';
+         
 
             $dateAhead = $interval -> d;
            
-            if ($dateAhead >= 1)
-            {
+            if ($dateAhead >= 1 || !$lastQueueTime )
+            {   
+                echo 'Processing and copying '. $protoTaskFreq. ' task '.  $nameToQueue . '<br />';
                 enqueTask($nameToQueue, $clientToQueue, $notesToQueue);
                 updateProtoTaskDate($idToQueue);
             }
@@ -234,8 +292,9 @@
 
             $dateAhead = $interval-> d;
            
-            if ($dateAhead >= 7)
+            if ($dateAhead >= 7 || !$lastQueueTime )
             {
+                echo 'Processing and copying '. $protoTaskFreq. ' task '.  $nameToQueue . '<br />';
                 enqueTask($nameToQueue, $clientToQueue, $notesToQueue);
                 updateProtoTaskDate($idToQueue);
             }
@@ -245,8 +304,9 @@
         {
             $dateAhead = $interval-> d;
            
-            if ($dateAhead >= 14)
+            if ($dateAhead >= 14 || !$lastQueueTime )
             {
+                echo 'Processing and copying '. $protoTaskFreq. ' task '.  $nameToQueue . '<br />';
                 enqueTask($nameToQueue, $clientToQueue, $notesToQueue);
                 updateProtoTaskDate($idToQueue);
             }
@@ -256,8 +316,9 @@
         {
             $dateAhead = $interval-> m;
            
-            if ($dateAhead >= 1)
+            if ($dateAhead >= 1 || !$lastQueueTime )
             {
+                echo 'Processing and copying '. $protoTaskFreq. ' task '.  $nameToQueue . '<br />';
                 enqueTask($nameToQueue, $clientToQueue, $notesToQueue);
                 updateProtoTaskDate($idToQueue);
             }
@@ -267,8 +328,9 @@
         {
             $dateAhead = $interval-> m;
            
-            if ($dateAhead >= 3)
+            if ($dateAhead >= 3 || !$lastQueueTime )
             {
+                echo 'Processing and copying '. $protoTaskFreq. ' task '.  $nameToQueue . '<br />';
                 enqueTask($nameToQueue, $clientToQueue, $notesToQueue);
                 updateProtoTaskDate($idToQueue);
             }
@@ -278,8 +340,9 @@
         {
             $dateAhead = $interval-> m + (12 * $interval-> y);
            
-            if ($dateAhead >= 12 )
+            if ($dateAhead >= 12 || !$lastQueueTime )
             {
+                echo 'Processing and copying '. $protoTaskFreq. ' task '.  $nameToQueue . '<br />';
                 enqueTask($nameToQueue, $clientToQueue, $notesToQueue);
                 updateProtoTaskDate($idToQueue);
             }
@@ -287,7 +350,7 @@
         }
     }
 
-    echo 'processed';
+    echo 'Processed';
 
    ?>
 
