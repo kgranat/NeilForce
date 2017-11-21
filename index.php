@@ -141,8 +141,10 @@
         TODO:
         <ul>
             <li>Clean up code + comment
+			<li> Only copy prototypes that have a name frequency (and date?)
             <li>Clean up / delete task queue database and make a note in the client table of last date
                 <ul>
+
                     <li>Get all tasks that are marked as complete
                     <li>look at task client
                     <li>Get last updated date of client
@@ -168,7 +170,7 @@
 
     //move this block to a getProtoTask function
         $view =rawurlencode('App View'); //we need to define the view for the table
-        $url = 'https://api.airtable.com/v0/' . $base . '/' . $table_prototype . '?maxRecords=100&view='. $view;  //put the url together
+        $url = 'https://api.airtable.com/v0/' . $base . '/' . $table_prototype . '?maxRecords=1200&view='. $view;  //put the url together
 
         $headers = array(
             'Authorization: Bearer ' . $api_key
@@ -184,10 +186,38 @@
         $airtable_response = json_decode($entries, TRUE);
 
 
+        $prototype_records = $airtable_response['records'];
+
+        $offset = $airtable_response['offset'] ;
+
+        while(!empty($offset ))
+        {
+             $view =rawurlencode('App View'); //we need to define the view for the table
+            $url = 'https://api.airtable.com/v0/' . $base . '/' . $table_prototype . '?maxRecords=1200&view='. $view . '&offset='.$offset;  //put the url together
+
+            $headers = array(
+                'Authorization: Bearer ' . $api_key
+            );
+            $ch = curl_init();
+            curl_setopt($ch, CURLOPT_HTTPGET, 1);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 10);
+            curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+            curl_setopt($ch, CURLOPT_URL, $url);
+            $entries = curl_exec($ch);
+            curl_close($ch);
+            $airtable_response = json_decode($entries, TRUE);
+            $offset = $airtable_response['offset'] ;
+
+            $prototype_records= array_merge($prototype_records,$airtable_response[records]);
+
+        }
+
+
+
     //move this block to a getQueueTask function
         $view =rawurlencode('App View'); //we need to define the view for the table
-        $url = 'https://api.airtable.com/v0/' . $base . '/' . $table_queue . '?maxRecords=100&view='. $view;  //put the url together
-
+        $url = 'https://api.airtable.com/v0/' . $base . '/' . $table_queue . '?maxRecords=1200&view='. $view ;  //put the url together
         $headers = array(
             'Authorization: Bearer ' . $api_key
         );
@@ -201,11 +231,46 @@
         curl_close($ch);
         $airtable_response_task_queue = json_decode($entries, TRUE);
 
+        $task_queue_records = $airtable_response_task_queue['records'];
+
+
+        unset($offset);
+        $offset = $airtable_response_task_queue['offset'] ;
+
+        while(!empty( $offset))
+        {
+            $view =rawurlencode('App View'); //we need to define the view for the table
+            $url = 'https://api.airtable.com/v0/' . $base . '/' . $table_queue . '?maxRecords=1200&view='. $view . '&offset='.$offset;  //put the url together
+
+            $headers = array(
+                'Authorization: Bearer ' . $api_key
+            );
+            $ch = curl_init();
+            curl_setopt($ch, CURLOPT_HTTPGET, 1);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 10);
+            curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+            curl_setopt($ch, CURLOPT_URL, $url);
+            $entries = curl_exec($ch);
+            curl_close($ch);
+            $airtable_response_task_queue = json_decode($entries, TRUE);
+            $offset = $airtable_response_task_queue['offset'] ;
+
+            $task_queue_records= array_merge($task_queue_records,$airtable_response_task_queue[records]);
+        }
 
 
 
+    // //air table records response prototype concatenated
+    // echo '<pre>';
+    // print_r($prototype_records);
+    // echo '</pre>';
 
-    //air table raw response
+    //air table records task response prototype concatenated
+    // echo '<pre>';
+    // print_r($task_queue_records);
+    // echo '</pre>';
+
     // echo '<pre>';
     // print_r($airtable_response);
     // echo '</pre>';
@@ -215,8 +280,8 @@
     // echo '</pre>';
 
 
-    //travese through task queue
-    foreach($airtable_response_task_queue['records'] as $key => $value) 
+    //travese through task queue to look for unsnoozers
+    foreach($task_queue_records as $key => $value) 
     {
         $idTask = $value['id'];  //entry id for the record
         $nameTask = $value['fields']['Name'];        //name of task
@@ -233,7 +298,7 @@
             $dateAhead = $interval-> d;
 
 
-        echo $nameTask . ' ' .$snoozed . ' ' . $snoozedDate . ' ' . $dateAhead. '<br />';
+        //echo $nameTask . ' ' .$snoozed . ' ' . $snoozedDate . ' ' . $dateAhead. '<br />';
 
             if($dateAhead >= 1)
             {
@@ -248,7 +313,7 @@
 
 
     //travese through protoype task 
-    foreach($airtable_response['records'] as $key => $value) 
+    foreach($prototype_records as $key => $value) 
     {
 
         $idToQueue = $value['id'];  //entry id for the record. Need this to update the prorotype task record later
@@ -270,83 +335,86 @@
         // print_r($interval);
         // echo '</pre>';
         
-        if ($protoTaskFreq == "Daily")
+        if(!empty($nameToQueue))
         {
-
-         
-
-            $dateAhead = $interval -> d;
-           
-            if ($dateAhead >= 1 || !$lastQueueTime )
-            {   
-                echo 'Processing and copying '. $protoTaskFreq. ' task '.  $nameToQueue . '<br />';
-                enqueTask($nameToQueue, $clientToQueue, $notesToQueue);
-                updateProtoTaskDate($idToQueue);
-            }
-
-
-            
-        }
-        elseif($protoTaskFreq == "Weekly")
-        {
-
-            $dateAhead = $interval-> d;
-           
-            if ($dateAhead >= 7 || !$lastQueueTime )
+            if ($protoTaskFreq == "Daily")
             {
-                echo 'Processing and copying '. $protoTaskFreq. ' task '.  $nameToQueue . '<br />';
-                enqueTask($nameToQueue, $clientToQueue, $notesToQueue);
-                updateProtoTaskDate($idToQueue);
-            }
+                echo 'test';
+             
 
-        }
-        elseif($protoTaskFreq == "Every 2 Weeks")
-        {
-            $dateAhead = $interval-> d;
-           
-            if ($dateAhead >= 14 || !$lastQueueTime )
+                $dateAhead = $interval -> d;
+               
+                if ($dateAhead >= 1 || !$lastQueueTime )
+                {   
+                    echo 'Processing and copying '. $protoTaskFreq. ' task '.  $nameToQueue . '<br />';
+                    enqueTask($nameToQueue, $clientToQueue, $notesToQueue);
+                    updateProtoTaskDate($idToQueue);
+                }
+
+
+                
+            }
+            elseif($protoTaskFreq == "Weekly")
             {
-                echo 'Processing and copying '. $protoTaskFreq. ' task '.  $nameToQueue . '<br />';
-                enqueTask($nameToQueue, $clientToQueue, $notesToQueue);
-                updateProtoTaskDate($idToQueue);
-            }
 
-        }
-        elseif($protoTaskFreq == "Monthly")
-        {
-            $dateAhead = $interval-> m;
-           
-            if ($dateAhead >= 1 || !$lastQueueTime )
+                $dateAhead = $interval-> d;
+               
+                if ($dateAhead >= 7 || !$lastQueueTime )
+                {
+                    echo 'Processing and copying '. $protoTaskFreq. ' task '.  $nameToQueue . '<br />';
+                    enqueTask($nameToQueue, $clientToQueue, $notesToQueue);
+                    updateProtoTaskDate($idToQueue);
+                }
+
+            }
+            elseif($protoTaskFreq == "Every 2 Weeks")
             {
-                echo 'Processing and copying '. $protoTaskFreq. ' task '.  $nameToQueue . '<br />';
-                enqueTask($nameToQueue, $clientToQueue, $notesToQueue);
-                updateProtoTaskDate($idToQueue);
-            }
+                $dateAhead = $interval-> d;
+               
+                if ($dateAhead >= 14 || !$lastQueueTime )
+                {
+                    echo 'Processing and copying '. $protoTaskFreq. ' task '.  $nameToQueue . '<br />';
+                    enqueTask($nameToQueue, $clientToQueue, $notesToQueue);
+                    updateProtoTaskDate($idToQueue);
+                }
 
-        }
-        elseif($protoTaskFreq == "Quarterly")
-        {
-            $dateAhead = $interval-> m;
-           
-            if ($dateAhead >= 3 || !$lastQueueTime )
+            }
+            elseif($protoTaskFreq == "Monthly")
             {
-                echo 'Processing and copying '. $protoTaskFreq. ' task '.  $nameToQueue . '<br />';
-                enqueTask($nameToQueue, $clientToQueue, $notesToQueue);
-                updateProtoTaskDate($idToQueue);
-            }
+                $dateAhead = $interval-> m;
+               
+                if ($dateAhead >= 1 || !$lastQueueTime )
+                {
+                    echo 'Processing and copying '. $protoTaskFreq. ' task '.  $nameToQueue . '<br />';
+                    enqueTask($nameToQueue, $clientToQueue, $notesToQueue);
+                    updateProtoTaskDate($idToQueue);
+                }
 
-        }
-        elseif($protoTaskFreq == "Yearly")
-        {
-            $dateAhead = $interval-> m + (12 * $interval-> y);
-           
-            if ($dateAhead >= 12 || !$lastQueueTime )
+            }
+            elseif($protoTaskFreq == "Quarterly")
             {
-                echo 'Processing and copying '. $protoTaskFreq. ' task '.  $nameToQueue . '<br />';
-                enqueTask($nameToQueue, $clientToQueue, $notesToQueue);
-                updateProtoTaskDate($idToQueue);
-            }
+                $dateAhead = $interval-> m;
+               
+                if ($dateAhead >= 3 || !$lastQueueTime )
+                {
+                    echo 'Processing and copying '. $protoTaskFreq. ' task '.  $nameToQueue . '<br />';
+                    enqueTask($nameToQueue, $clientToQueue, $notesToQueue);
+                    updateProtoTaskDate($idToQueue);
+                }
 
+            }
+            elseif($protoTaskFreq == "Yearly")
+            {
+                $dateAhead = $interval-> m + (12 * $interval-> y);
+               
+                if ($dateAhead >= 12 || !$lastQueueTime )
+                {
+                    echo 'Processing and copying '. $protoTaskFreq. ' task '.  $nameToQueue . '<br />';
+                    enqueTask($nameToQueue, $clientToQueue, $notesToQueue);
+                    updateProtoTaskDate($idToQueue);
+                }
+
+            }
         }
     }
 
